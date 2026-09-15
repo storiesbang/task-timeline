@@ -20,6 +20,13 @@
 # production
 /build
 
+# 使用者資料（M1 上的才是正本）
+/data/
+
+# 個人部署筆記與腳本，只留本機
+/PROGRESS.md
+/deploy.sh
+
 # misc
 .DS_Store
 *.pem

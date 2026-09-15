@@ -1,36 +1,69 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 任務時間軸
 
-## Getting Started
+把競賽、研究、課業等不同專案的階段與截止日期，放在同一條互動式時間軸上。
 
-First, run the development server:
+- 分類 → 專案 → 階段三層，階段有「區間／整天／時間點」三種
+- 拖曳移動、拖右緣調整長度、雙擊空白處新增、點一下編輯
+- 左欄倒數最近一個未完成階段，逾期標紅
+- 重疊階段自動分道，階段之間的空檔標示「等待 N 天」
+- 週／月／季縮放，跟隨系統淺色／深色
+
+## 資料存在哪裡
+
+build 時用環境變數選擇儲存模式：
+
+| 模式 | 設定 | 資料位置 | 適合 |
+|---|---|---|---|
+| 本機檔案 | `NEXT_PUBLIC_STORAGE=file` | 使用者自己電腦上的 `.json` 檔 | 公開架站給多人用 |
+| 伺服器（預設） | 不設定 | 伺服器上的 `data/timeline.json`（可用 `DATA_DIR` 改位置） | 自己架在自己的電腦或家用伺服器 |
+
+**本機檔案模式**打開網站後，可以「匯入存檔」或「建立新的」：
+
+- **Chrome、Edge**：修改後自動寫回原本的檔案。
+- **Safari、Firefox**：瀏覽器不支援直接寫檔，修改後請按右上角「下載存檔」，下次開網站再匯入。
+
+資料不會上傳到伺服器。這個模式下 `/api/timeline` 會停用。
+
+> ⚠️ 伺服器模式沒有登入保護，連得到的人都能讀寫，不要直接開放到公開網路。
+
+## 開發
+
+需要 Node.js 20 以上。
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev                                 # 伺服器模式，http://localhost:3000
+NEXT_PUBLIC_STORAGE=file npm run dev        # 本機檔案模式
+node --test lib/timeline.test.mjs           # 測試
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 部署
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+**Vercel**（本機檔案模式）：匯入這個 repo，在 Environment Variables 加上 `NEXT_PUBLIC_STORAGE` = `file`，然後按 Deploy。
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+**自己架**（伺服器模式）：
 
-## Learn More
+```bash
+npm run build
+DATA_DIR=/path/to/data PORT=3000 npm start
+```
 
-To learn more about Next.js, take a look at the following resources:
+File System Access API 需要 HTTPS（或 `localhost`）才能用。
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 資料格式
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```ts
+{
+  categories: string[];
+  projects: {
+    id: string; title: string; category: string;
+    phases: { id: string; name: string; kind: 'range' | 'day' | 'event'; startAt: string; endAt?: string; isCompleted: boolean }[];
+  }[];
+}
+```
 
-## Deploy on Vercel
+時間一律存成 ISO 8601（UTC）。
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 授權
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+[MIT](LICENSE)

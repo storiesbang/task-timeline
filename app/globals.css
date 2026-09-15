@@ -1,26 +1,50 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  color-scheme: light dark;
+  --bg: #f5f6f8;
+  --panel: #ffffff;
+  --subtle: #f0f2f5;
+  --line: #e2e5ea;
+  --grid: #eceef2;
+  --weekend: rgb(15 23 42 / 0.03);
+  --fg: #111827;
+  --muted: #6b7280;
+  --accent: #4f46e5;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --bg: #0c0e13;
+    --panel: #13161d;
+    --subtle: #191d26;
+    --line: #262b36;
+    --grid: #1b1f28;
+    --weekend: rgb(255 255 255 / 0.025);
+    --fg: #e5e7eb;
+    --muted: #8b93a5;
+    --accent: #818cf8;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@theme inline {
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-subtle: var(--subtle);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --font-sans: var(--font-geist-sans), "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+@layer base {
+  *, ::backdrop {
+    border-color: var(--line);
+  }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+  }
 }
