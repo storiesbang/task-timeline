@@ -304,18 +304,20 @@ export default function TimelinePage() {
                 const d = new Date(rangeStart);
                 d.setDate(d.getDate() + i);
                 const isToday = d.getTime() === today;
-                if (px < 20 && d.getDay() !== 1 && !isToday) return null;
+                // ponytail: 週一加左分隔線＋星期標示，其餘日期靠它自己往後數
+                const isMonday = d.getDay() === 1;
+                if (px < 20 && !isMonday && !isToday) return null;
                 return (
                   <div
                     key={i}
-                    className="absolute bottom-1.5 flex justify-center text-[11px] tabular-nums"
+                    className={`absolute bottom-1.5 flex justify-center text-[11px] tabular-nums ${isMonday ? 'top-7 border-l items-end' : ''}`}
                     style={{ left: x(d.getTime()), width: px < 20 ? undefined : px }}
                   >
                     <span
-                      className={`rounded px-1 whitespace-nowrap ${isToday ? 'bg-accent font-semibold text-white' : d.getDay() % 6 === 0 ? 'text-muted/60' : 'text-muted'}`}
+                      className={`rounded px-1 whitespace-nowrap ${isToday ? 'bg-accent font-semibold text-white' : isMonday ? 'font-semibold text-fg' : d.getDay() % 6 === 0 ? 'text-muted/60' : 'text-muted'}`}
                     >
                       {d.getDate()}
-                      {px >= 60 && ` ${'日一二三四五六'[d.getDay()]}`}
+                      {(px >= 60 || isMonday) && ` ${'日一二三四五六'[d.getDay()]}`}
                     </span>
                   </div>
                 );
