@@ -85,6 +85,7 @@ export default function TimelinePage() {
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
+  const pan = useRef<{ x: number; y: number; left: number; top: number; captured: boolean } | null>(null);
 
   const openData = (next: TimelineData, name = fileName, handle: FileHandle | null = null) => {
     setFileHandle(handle);
@@ -206,6 +207,32 @@ export default function TimelinePage() {
     updatePhases(d.projectId, phases => phases.map(p => (p.id === o.id ? next : p)));
   };
 
+  // --- 空白處拖曳平移畫面（表頭、任務區都可以）；點在階段上時 onBarDown 已先接手 ---
+  const onPanDown = (e: React.PointerEvent) => {
+    const s = scroller.current;
+    if (e.button !== 0 || drag.current || !s || (e.target as HTMLElement).closest('button, input, select, textarea, a')) return;
+    pan.current = { x: e.clientX, y: e.clientY, left: s.scrollLeft, top: s.scrollTop, captured: false };
+  };
+
+  const onPanMove = (e: React.PointerEvent) => {
+    const p = pan.current;
+    const s = scroller.current;
+    if (!p || !s) return;
+    s.scrollLeft = p.left - (e.clientX - p.x);
+    s.scrollTop = p.top - (e.clientY - p.y);
+    // 超過 4px 才抓 pointer：小於這個距離仍算點擊，空白處雙擊新增階段才不會失效
+    if (!p.captured && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 4) {
+      p.captured = true;
+      s.setPointerCapture(e.pointerId);
+      s.style.userSelect = 'none';
+    }
+  };
+
+  const onPanUp = () => {
+    pan.current = null;
+    if (scroller.current) scroller.current.style.userSelect = '';
+  };
+
   const onBarUp = () => {
     const d = drag.current;
     drag.current = null;
@@ -269,7 +296,15 @@ export default function TimelinePage() {
         </div>
       </header>
 
-      <div ref={scroller} className="relative flex-1 overflow-auto">
+      <div
+        ref={scroller}
+        className="relative flex-1 cursor-grab overflow-auto"
+        onPointerDown={onPanDown}
+        onPointerMove={onPanMove}
+        onPointerUp={onPanUp}
+        onPointerCancel={onPanUp}
+        onPointerLeave={onPanUp}
+      >
         <div
           className="relative min-h-full"
           style={{
