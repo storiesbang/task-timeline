@@ -212,6 +212,7 @@ export default function TimelinePage() {
     const s = scroller.current;
     if (e.button !== 0 || drag.current || !s || (e.target as HTMLElement).closest('button, input, select, textarea, a')) return;
     pan.current = { x: e.clientX, y: e.clientY, left: s.scrollLeft, top: s.scrollTop, captured: false };
+    s.style.userSelect = 'none'; // 按下就關掉選取，等到拖出 4px 才關已經來不及，字早就反白了
   };
 
   const onPanMove = (e: React.PointerEvent) => {
@@ -224,7 +225,6 @@ export default function TimelinePage() {
     if (!p.captured && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 4) {
       p.captured = true;
       s.setPointerCapture(e.pointerId);
-      s.style.userSelect = 'none';
     }
   };
 
