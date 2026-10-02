@@ -533,9 +533,13 @@ function ProjectRow({
   };
 }) {
   const focus = focusPhase(project.phases);
+  // 還沒開始就倒數開始時間，開始後才倒數結束
+  const untilStart = focus ? startMs(focus) - now : 0;
   const remaining = focus ? endMs(focus) - now : 0;
   const badge =
-    remaining < 0
+    untilStart > 0
+      ? 'bg-sky-500/15 text-sky-700 dark:text-sky-400'
+      : remaining < 0
       ? 'bg-red-500 text-white'
       : remaining <= 3 * DAY
         ? 'bg-red-500/15 text-red-600 dark:text-red-400'
@@ -581,7 +585,9 @@ function ProjectRow({
             </div>
             <span className={`inline-flex w-fit items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium tabular-nums ${badge}`}>
               <Clock className="size-3" />
-              {remaining < 0 ? '已逾期' : '剩'} {formatDuration(remaining)}
+              {untilStart > 0
+                ? `${formatDuration(untilStart)} 後開始`
+                : `${remaining < 0 ? '已逾期' : '剩'} ${formatDuration(remaining)}`}
             </span>
           </>
         ) : (
