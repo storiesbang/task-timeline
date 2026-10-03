@@ -43,7 +43,7 @@ node --test lib/timeline.test.mjs           # 測試
 
 ## 部署
 
-**Vercel**（本機檔案模式）：匯入這個 repo，在 Environment Variables 加上 `NEXT_PUBLIC_STORAGE` = `file`，然後按 Deploy。
+**Cloudflare Pages**（本機檔案模式，輸出純靜態檔）：匯入這個 repo，Framework preset 選 None，Build command `npm run build`，Build output directory `out`，Environment variables 加上 `NEXT_PUBLIC_STORAGE` = `file`。
 
 **自己架**（伺服器模式）：
 

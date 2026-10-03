@@ -8,12 +8,7 @@ import { defaultData, isTimelineData } from '@/lib/timeline';
 const dataDirectory = process.env.DATA_DIR ?? path.join(process.cwd(), 'data');
 const dataFile = path.join(dataDirectory, 'timeline.json');
 
-// 公開架站（本機檔案模式）關掉 API，否則所有訪客會共用、互相覆寫同一份伺服器資料
-const disabled = process.env.NEXT_PUBLIC_STORAGE === 'file';
-const notFound = () => NextResponse.json({ error: 'not found' }, { status: 404 });
-
 export async function GET() {
-  if (disabled) return notFound();
   try {
     return NextResponse.json(JSON.parse(await readFile(dataFile, 'utf8')));
   } catch (error) {
@@ -24,7 +19,6 @@ export async function GET() {
 }
 
 export async function PUT(request: Request) {
-  if (disabled) return notFound();
   const data = await request.json().catch(() => null);
   if (!isTimelineData(data)) return NextResponse.json({ error: 'invalid data' }, { status: 400 });
   await mkdir(dataDirectory, { recursive: true });
