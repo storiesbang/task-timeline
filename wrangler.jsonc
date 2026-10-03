@@ -1,0 +1,6 @@
+// Cloudflare Workers 靜態網站：上傳本機檔案模式 build 出來的 out/（build 時要設 NEXT_PUBLIC_STORAGE=file）
+{
+  "name": "task-timeline",
+  "compatibility_date": "2026-10-04",
+  "assets": { "directory": "./out", "not_found_handling": "404-page" }
+}

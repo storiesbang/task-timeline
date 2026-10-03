@@ -43,7 +43,7 @@ node --test lib/timeline.test.mjs           # 測試
 
 ## 部署
 
-**Cloudflare Pages**（本機檔案模式，輸出純靜態檔）：匯入這個 repo，Framework preset 選 None，Build command `npm run build`，Build output directory `out`，Environment variables 加上 `NEXT_PUBLIC_STORAGE` = `file`。
+**Cloudflare Workers**（本機檔案模式，輸出純靜態檔，設定在 `wrangler.jsonc`）：匯入這個 repo，Build command `npm run build`，Deploy command `npx wrangler deploy`，Advanced settings 的 **Build variables** 加上 `NEXT_PUBLIC_STORAGE` = `file`。
 
 **自己架**（伺服器模式）：
 
