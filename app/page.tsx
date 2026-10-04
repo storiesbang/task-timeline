@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { CalendarRange, Check, ChevronDown, ChevronRight, Clock, Download, Pencil, Plus } from 'lucide-react';
+import { CalendarRange, Check, ChevronDown, ChevronRight, Clock, Download, Pencil, Plus, X } from 'lucide-react';
 import {
   DAY,
   HOUR,
@@ -9,6 +9,7 @@ import {
   type PhaseKind,
   type Project,
   type TimelineData,
+  type Todo,
   dayBounds,
   defaultData,
   endMs,
@@ -29,7 +30,10 @@ import {
 const FILE_MODE = process.env.NEXT_PUBLIC_STORAGE === 'file';
 
 // File System Access API 只有 Chromium 有，TS 的 lib.dom 也還沒收錄 picker 跟 requestPermission
-type FileHandle = FileSystemFileHandle & { requestPermission(o: { mode: 'readwrite' }): Promise<PermissionState> };
+type FileHandle = FileSystemFileHandle & {
+  requestPermission(o: { mode: 'readwrite' }): Promise<PermissionState>;
+  queryPermission(o: { mode: 'readwrite' }): Promise<PermissionState>;
+};
 type PickerOptions = { types: { description: string; accept: Record<string, string[]> }[]; suggestedName?: string };
 type FsWindow = { showOpenFilePicker(o: PickerOptions): Promise<FileHandle[]>; showSaveFilePicker(o: PickerOptions): Promise<FileHandle> };
 const PICKER: PickerOptions = { types: [{ description: '任務時間軸存檔', accept: { 'application/json': ['.json'] } }] };
@@ -39,6 +43,21 @@ async function writeFile(handle: FileHandle, data: TimelineData) {
   const w = await handle.createWritable(); // 寫到暫存檔，close 才取代原檔，中斷不會留下壞檔
   await w.write(JSON.stringify(data, null, 2));
   await w.close();
+}
+
+// 刷新不用重新匯入：資料放 sessionStorage（關掉瀏覽器就清掉）；檔案 handle 放不進去，只能放 IndexedDB
+const SESSION_KEY = 'timeline-session';
+function idb<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore) => IDBRequest<T>) {
+  return new Promise<T>((resolve, reject) => {
+    const open = indexedDB.open('timeline', 1);
+    open.onupgradeneeded = () => open.result.createObjectStore('kv');
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const req = fn(open.result.transaction('kv', mode).objectStore('kv'));
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    };
+  });
 }
 
 const LEFT = 300; // 左欄寬 px
@@ -77,6 +96,7 @@ export default function TimelinePage() {
   const [writeError, setWriteError] = useState(false);
   const [fileName, setFileName] = useState('timeline.json');
   const [fileHandle, setFileHandle] = useState<FileHandle | null>(null); // 本機檔案模式且瀏覽器支援才有，有才能自動存檔
+  const [restoring, setRestoring] = useState(FILE_MODE);
   const canAutoSave = !FILE_MODE || fileHandle !== null;
   const status = data === saved ? 'saved' : writeError ? 'error' : canAutoSave ? 'saving' : 'unsaved';
   const [now, setNow] = useState(() => Date.now());
@@ -89,6 +109,8 @@ export default function TimelinePage() {
 
   const openData = (next: TimelineData, name = fileName, handle: FileHandle | null = null) => {
     setFileHandle(handle);
+    // 一律覆寫，不然換開一個拿不到寫入權限的檔案時，刷新後會接回上一個檔案的 handle
+    if (FILE_MODE) idb('readwrite', st => st.put(handle, 'handle')).catch(() => {});
     setFileName(name);
     setSaved(next);
     setData(next);
@@ -100,6 +122,23 @@ export default function TimelinePage() {
         .then(r => (r.ok ? r.json() : Promise.reject()))
         .then(d => openData(d))
         .catch(() => setLoadError(true));
+    else {
+      let session = null;
+      try {
+        session = JSON.parse(sessionStorage.getItem(SESSION_KEY) ?? 'null');
+      } catch {}
+      const restore =
+        session && isTimelineData(session.data)
+          ? idb<FileHandle | null>('readonly', st => st.get('handle'))
+              .catch(() => null)
+              .then(async h => {
+                // Chrome 在分頁還開著時會保留寫入權限；拿不到就退回手動下載
+                const ok = h && (await h.queryPermission({ mode: 'readwrite' }).catch(() => 'denied')) === 'granted';
+                openData(session.data, session.name, ok ? h : null);
+              })
+          : Promise.resolve();
+      restore.finally(() => setRestoring(false));
+    }
     const timer = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -123,6 +162,13 @@ export default function TimelinePage() {
     }, 400);
     return () => clearTimeout(timer);
   }, [data, saved, canAutoSave, fileHandle]);
+
+  useEffect(() => {
+    if (!FILE_MODE || !data) return;
+    try {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify({ data, name: fileName }));
+    } catch {}
+  }, [data, fileName]);
 
   // 還沒存到的變更，關分頁前讓瀏覽器跳確認
   useEffect(() => {
@@ -241,7 +287,7 @@ export default function TimelinePage() {
 
   if (loadError)
     return <Centered>讀取資料失敗，請確認 data/timeline.json 格式正確後重新整理。</Centered>;
-  if (!data) return FILE_MODE ? <FileGate onOpen={openData} /> : <Centered>載入中…</Centered>;
+  if (!data) return FILE_MODE && !restoring ? <FileGate onOpen={openData} /> : <Centered>載入中…</Centered>;
 
   const monthStarts: number[] = [];
   for (let d = new Date(rangeStart); d.getTime() < rangeStart + days * DAY; d.setMonth(d.getMonth() + 1, 1)) {
@@ -639,6 +685,11 @@ function ProjectRow({
                 {phase.isCompleted && <Check className="size-2.5 text-white" strokeWidth={3} />}
               </button>
               <span className={`truncate font-medium ${overdue ? 'text-red-500' : ''}`}>{phase.name}</span>
+              {!!phase.todos?.length && (
+                <span className="shrink-0 text-[10px] text-muted tabular-nums">
+                  {phase.todos.filter(t => t.done).length}/{phase.todos.length}
+                </span>
+              )}
             </span>
           );
           return (
@@ -827,6 +878,8 @@ function PhaseDialog({
 }) {
   const [kind, setKind] = useState<PhaseKind>(phase?.kind ?? 'range');
   const [error, setError] = useState('');
+  const [todos, setTodos] = useState<Todo[]>(phase?.todos ?? []);
+  const [newTodo, setNewTodo] = useState('');
   const start0 = phase ? startMs(phase) : at;
   const end0 = phase?.kind === 'range' ? endMs(phase) : start0 + 3 * DAY;
 
@@ -850,6 +903,7 @@ function PhaseDialog({
             startAt: iso(start),
             endAt: end === null ? undefined : iso(end),
             isCompleted: f.get('done') === 'on',
+            todos: todos.filter(t => t.text.trim()),
           });
         }}
       >
@@ -890,6 +944,41 @@ function PhaseDialog({
           <input type="checkbox" name="done" defaultChecked={phase?.isCompleted} className="size-4 accent-[var(--accent)]" />
           已完成
         </label>
+        <Field label={`待辦 ${todos.filter(t => t.done).length}/${todos.length}`}>
+          <div className="grid gap-1">
+            {todos.map(t => (
+              <div key={t.id} className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={t.done}
+                  onChange={() => setTodos(ts => ts.map(x => (x.id === t.id ? { ...x, done: !x.done } : x)))}
+                  className="size-4 shrink-0 accent-[var(--accent)]"
+                />
+                <input
+                  value={t.text}
+                  onChange={e => setTodos(ts => ts.map(x => (x.id === t.id ? { ...x, text: e.target.value } : x)))}
+                  className={`${inputCls} py-1 font-normal text-fg ${t.done ? 'text-muted line-through' : ''}`}
+                />
+                <button type="button" title="刪除待辦" className={`${iconBtn} shrink-0`} onClick={() => setTodos(ts => ts.filter(x => x.id !== t.id))}>
+                  <X className="size-4" />
+                </button>
+              </div>
+            ))}
+            <input
+              value={newTodo}
+              onChange={e => setNewTodo(e.target.value)}
+              onKeyDown={e => {
+                if (e.key !== 'Enter' || e.nativeEvent.isComposing) return; // 注音選字的 Enter 不算
+                e.preventDefault();
+                if (!newTodo.trim()) return;
+                setTodos(ts => [...ts, { id: uid(), text: newTodo.trim(), done: false }]);
+                setNewTodo('');
+              }}
+              className={`${inputCls} py-1 font-normal text-fg`}
+              placeholder="新增待辦，按 Enter"
+            />
+          </div>
+        </Field>
         {error && <p className="text-sm text-red-500">{error}</p>}
         <DialogActions onClose={onClose} onDelete={onDelete} />
       </form>

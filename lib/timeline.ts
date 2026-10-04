@@ -1,5 +1,11 @@
 export type PhaseKind = 'range' | 'day' | 'event';
 
+export interface Todo {
+  id: string;
+  text: string;
+  done: boolean;
+}
+
 export interface Phase {
   id: string;
   name: string;
@@ -7,6 +13,7 @@ export interface Phase {
   startAt: string;
   endAt?: string;
   isCompleted: boolean;
+  todos?: Todo[]; // 舊存檔沒有這欄
 }
 
 export interface Project {
@@ -45,7 +52,9 @@ export function isTimelineData(d: TimelineData) {
             ['range', 'day', 'event'].includes(ph.kind) &&
             isDate(ph.startAt) &&
             (ph.kind === 'event' || isDate(ph.endAt)) &&
-            typeof ph.isCompleted === 'boolean',
+            typeof ph.isCompleted === 'boolean' &&
+            (ph.todos === undefined ||
+              (Array.isArray(ph.todos) && ph.todos.every(t => isStr(t?.id) && isStr(t.text) && typeof t.done === 'boolean'))),
         ),
     )
   );
