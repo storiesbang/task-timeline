@@ -1,15 +1,17 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { CalendarRange, Check, ChevronDown, ChevronRight, Clock, Download, Pencil, Plus, X } from 'lucide-react';
+import { CalendarRange, Check, ChevronDown, ChevronRight, Clock, Download, History, Pencil, Plus, X } from 'lucide-react';
 import {
   DAY,
   HOUR,
+  type ArchiveEntry,
   type Phase,
   type PhaseKind,
   type Project,
   type TimelineData,
   type Todo,
+  archived,
   dayBounds,
   defaultData,
   endMs,
@@ -85,7 +87,8 @@ const iconBtn = 'grid size-7 place-items-center rounded-md text-muted hover:bg-s
 type Dialog =
   | { type: 'phase'; projectId: string; phase?: Phase; at?: number }
   | { type: 'project'; project?: Project; category: string }
-  | { type: 'category'; name?: string };
+  | { type: 'category'; name?: string }
+  | { type: 'history' };
 
 type Drag = { mode: 'move' | 'resize'; projectId: string; phase: Phase; x0: number; moved: boolean };
 
@@ -336,6 +339,9 @@ export default function TimelinePage() {
           <button className={ghostBtn} onClick={() => scrollToToday()}>
             今天
           </button>
+          <button className={ghostBtn} onClick={() => setDialog({ type: 'history' })}>
+            <History className="size-4" /> 歷史
+          </button>
           <button className={primaryBtn} onClick={() => setDialog({ type: 'category' })}>
             <Plus className="size-4" /> 分類
           </button>
@@ -486,7 +492,12 @@ export default function TimelinePage() {
           onDelete={
             dialog.phase &&
             (() => {
-              updatePhases(dialog.projectId, phases => phases.filter(p => p.id !== dialog.phase?.id));
+              const phase = dialog.phase!;
+              setData(d => d && {
+                ...d,
+                projects: d.projects.map(p => (p.id === dialog.projectId ? { ...p, phases: p.phases.filter(ph => ph.id !== phase.id) } : p)),
+                archive: archived(d, 'deleted', { ...d.projects.find(p => p.id === dialog.projectId)!, phases: [phase] }),
+              });
               setDialog(null);
             })
           }
@@ -509,10 +520,15 @@ export default function TimelinePage() {
             });
             setDialog(null);
           }}
-          onDelete={
+          onArchive={
             dialog.project &&
-            (() => {
-              setData(d => d && { ...d, projects: d.projects.filter(p => p.id !== dialog.project?.id) });
+            ((how: ArchiveEntry['how']) => {
+              const id = dialog.project!.id;
+              setData(d => d && {
+                ...d,
+                projects: d.projects.filter(p => p.id !== id),
+                archive: archived(d, how, d.projects.find(p => p.id === id)!),
+              });
               setDialog(null);
             })
           }
@@ -528,6 +544,7 @@ export default function TimelinePage() {
           onSave={name => {
             const old = dialog.name;
             setData(d => d && {
+              ...d,
               categories: old ? d.categories.map(c => (c === old ? name : c)) : [...d.categories, name],
               projects: d.projects.map(p => (old && p.category === old ? { ...p, category: name } : p)),
             });
@@ -539,10 +556,38 @@ export default function TimelinePage() {
                   setData(d => d && {
                     categories: d.categories.filter(c => c !== dialog.name),
                     projects: d.projects.filter(p => p.category !== dialog.name),
+                    archive: archived(d, 'deleted', ...d.projects.filter(p => p.category === dialog.name)),
                   });
                   setDialog(null);
                 }
               : undefined
+          }
+        />
+      )}
+
+      {dialog?.type === 'history' && (
+        <HistoryDialog
+          archive={data.archive ?? []}
+          onClose={() => setDialog(null)}
+          onRestore={entry =>
+            setData(d => {
+              if (!d) return d;
+              const { project } = entry;
+              const existing = d.projects.find(p => p.id === project.id);
+              return {
+                // 分類已刪就補回來
+                categories: d.categories.includes(project.category) ? d.categories : [...d.categories, project.category],
+                // 專案還在（刪單一階段的情況）就把階段併回去，跳過已經存在的
+                projects: existing
+                  ? d.projects.map(p =>
+                      p === existing
+                        ? { ...p, phases: [...p.phases, ...project.phases.filter(ph => !p.phases.some(x => x.id === ph.id))] }
+                        : p,
+                    )
+                  : [...d.projects, project],
+                archive: d.archive?.filter(a => a !== entry),
+              };
+            })
           }
         />
       )}
@@ -991,14 +1036,14 @@ function ProjectDialog({
   category,
   categories,
   onSave,
-  onDelete,
+  onArchive,
   onClose,
 }: {
   project?: Project;
   category: string;
   categories: string[];
   onSave: (title: string, category: string) => void;
-  onDelete?: () => void;
+  onArchive?: (how: ArchiveEntry['how']) => void;
   onClose: () => void;
 }) {
   return (
@@ -1022,9 +1067,14 @@ function ProjectDialog({
             ))}
           </select>
         </Field>
+        {onArchive && (
+          <button type="button" className={`${ghostBtn} justify-center`} onClick={() => onArchive('done')}>
+            <Check className="size-4" /> 專案完成，移到歷史
+          </button>
+        )}
         <DialogActions
           onClose={onClose}
-          onDelete={onDelete}
+          onDelete={onArchive && (() => onArchive('deleted'))}
           confirmText={project?.phases.length ? `連同 ${project.phases.length} 個階段刪除？` : undefined}
         />
       </form>
@@ -1070,6 +1120,48 @@ function CategoryDialog({
           confirmText={projectCount ? `連同 ${projectCount} 個專案刪除？` : undefined}
         />
       </form>
+    </Modal>
+  );
+}
+
+function HistoryDialog({
+  archive,
+  onClose,
+  onRestore,
+}: {
+  archive: ArchiveEntry[];
+  onClose: () => void;
+  onRestore: (entry: ArchiveEntry) => void;
+}) {
+  return (
+    <Modal title="歷史" onClose={onClose}>
+      {archive.length === 0 && <p className="text-sm text-muted">還沒有完成或刪除的東西。</p>}
+      <ul className="grid max-h-[60vh] gap-3 overflow-y-auto">
+        {archive.toReversed().map((entry, i) => (
+          <li key={i} className="rounded-lg border p-3 text-sm">
+            <div className="flex items-center gap-2">
+              <span className={`rounded px-1.5 text-xs ${entry.how === 'done' ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : 'bg-subtle text-muted'}`}>
+                {entry.how === 'done' ? '完成' : '刪除'}
+              </span>
+              <span className="font-medium">{entry.project.title}</span>
+              <span className="text-xs text-muted">{entry.project.category}</span>
+              <span className="ml-auto text-xs text-muted tabular-nums">{new Date(entry.at).toLocaleDateString()}</span>
+              <button className={`${ghostBtn} px-2 py-0.5 text-xs`} onClick={() => onRestore(entry)}>
+                還原
+              </button>
+            </div>
+            {entry.project.phases.length > 0 && (
+              <ul className="mt-1.5 grid gap-0.5 text-xs text-muted">
+                {entry.project.phases.map(ph => (
+                  <li key={ph.id} className={ph.isCompleted ? 'line-through' : ''}>
+                    {ph.name} · {formatPhaseTime(ph)}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </li>
+        ))}
+      </ul>
     </Modal>
   );
 }

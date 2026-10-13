@@ -23,9 +23,17 @@ export interface Project {
   phases: Phase[];
 }
 
+/** 完成或刪除的東西搬來這裡留歷史；刪單一階段時 project 只帶那個階段 */
+export interface ArchiveEntry {
+  at: string;
+  how: 'done' | 'deleted';
+  project: Project;
+}
+
 export interface TimelineData {
   categories: string[];
   projects: Project[];
+  archive?: ArchiveEntry[]; // 舊存檔沒有這欄
 }
 
 export const defaultData: TimelineData = { categories: ['競賽', '研究', '課業'], projects: [] };
@@ -33,32 +41,36 @@ export const defaultData: TimelineData = { categories: ['競賽', '研究', '課
 const isStr = (v: unknown): v is string => typeof v === 'string';
 const isDate = (v: unknown) => isStr(v) && !Number.isNaN(Date.parse(v));
 
+const isPhase = (ph: Phase) =>
+  isStr(ph?.id) &&
+  isStr(ph.name) &&
+  ['range', 'day', 'event'].includes(ph.kind) &&
+  isDate(ph.startAt) &&
+  (ph.kind === 'event' || isDate(ph.endAt)) &&
+  typeof ph.isCompleted === 'boolean' &&
+  (ph.todos === undefined ||
+    (Array.isArray(ph.todos) && ph.todos.every(t => isStr(t?.id) && isStr(t.text) && typeof t.done === 'boolean')));
+
+const isProject = (p: Project) => isStr(p?.id) && isStr(p.title) && isStr(p.category) && Array.isArray(p.phases) && p.phases.every(isPhase);
+
 /** 伺服器 PUT 與匯入本機檔案共用的格式檢查 */
 export function isTimelineData(d: TimelineData) {
   return (
     Array.isArray(d?.categories) &&
     d.categories.every(isStr) &&
     Array.isArray(d.projects) &&
-    d.projects.every(
-      p =>
-        isStr(p?.id) &&
-        isStr(p.title) &&
-        d.categories.includes(p.category) &&
-        Array.isArray(p.phases) &&
-        p.phases.every(
-          ph =>
-            isStr(ph?.id) &&
-            isStr(ph.name) &&
-            ['range', 'day', 'event'].includes(ph.kind) &&
-            isDate(ph.startAt) &&
-            (ph.kind === 'event' || isDate(ph.endAt)) &&
-            typeof ph.isCompleted === 'boolean' &&
-            (ph.todos === undefined ||
-              (Array.isArray(ph.todos) && ph.todos.every(t => isStr(t?.id) && isStr(t.text) && typeof t.done === 'boolean'))),
-        ),
-    )
+    d.projects.every(p => isProject(p) && d.categories.includes(p.category)) &&
+    // 歷史裡的分類可能已經刪掉，不檢查是否存在
+    (d.archive === undefined ||
+      (Array.isArray(d.archive) && d.archive.every(a => isDate(a?.at) && ['done', 'deleted'].includes(a.how) && isProject(a.project))))
   );
 }
+
+/** 把專案搬進歷史 */
+export const archived = (d: TimelineData, how: ArchiveEntry['how'], ...projects: Project[]): ArchiveEntry[] => [
+  ...(d.archive ?? []),
+  ...projects.map(project => ({ at: new Date().toISOString(), how, project })),
+];
 
 export const HOUR = 3_600_000;
 export const DAY = 24 * HOUR;
