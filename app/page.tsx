@@ -7,6 +7,7 @@ import {
   HOUR,
   type ArchiveEntry,
   type Phase,
+  type Importance,
   type PhaseKind,
   type Project,
   type TimelineData,
@@ -16,6 +17,8 @@ import {
   defaultData,
   endMs,
   focusPhase,
+  priorities,
+  crStatus,
   formatDuration,
   formatPhaseTime,
   fromLocalInput,
@@ -192,6 +195,9 @@ export default function TimelinePage() {
   };
 
   const today = new Date(now).setHours(0, 0, 0, 0);
+  // ponytail: 只標前 3 名，全部標會讓時間軸太雜
+  const top = data ? priorities(data.projects, now).slice(0, 3) : [];
+  const rank = new Map(top.map((r, i) => [r.phase.id, i + 1]));
 
   // 時間軸範圍：從週一開始，涵蓋今天前三週到最後一個階段之後
   const { rangeStart, days } = useMemo(() => {
@@ -348,6 +354,38 @@ export default function TimelinePage() {
         </div>
       </header>
 
+      {top.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b bg-panel px-5 py-2 text-xs">
+          <span className="font-medium text-muted" title="依臨界比（剩餘時間 ÷ 剩餘工作量）、重要度、後面卡著幾個階段綜合排序">
+            建議優先
+          </span>
+          {top.map(({ project, phase, cr }, i) => {
+            const st = crStatus(cr);
+            return (
+              <button
+                key={phase.id}
+                onClick={() => setDialog({ type: 'phase', projectId: project.id, phase })}
+                className="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 hover:bg-subtle"
+              >
+                <span className="grid size-4 shrink-0 place-items-center rounded-full bg-accent text-[10px] font-semibold text-white">{i + 1}</span>
+                <span className="max-w-48 truncate">
+                  <span className="text-muted">{project.title} · </span>
+                  {phase.name}
+                </span>
+                {st && (
+                  <span
+                    className={`shrink-0 rounded px-1 font-medium ${st === '緊繃' ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400' : 'bg-red-500/15 text-red-600 dark:text-red-400'}`}
+                  >
+                    {st}
+                  </span>
+                )}
+                {!phase.todos?.length && <span className="shrink-0 text-muted" title="沒有待辦，以整段時間估算剩餘工作量">?</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       <div
         ref={scroller}
         className="relative flex-1 cursor-grab overflow-auto"
@@ -468,6 +506,7 @@ export default function TimelinePage() {
                       project={project}
                       color={color}
                       now={now}
+                      rank={rank}
                       px={px}
                       x={x}
                       onEditProject={() => setDialog({ type: 'project', project, category })}
@@ -599,6 +638,7 @@ function ProjectRow({
   project,
   color,
   now,
+  rank,
   px,
   x,
   rangeStart,
@@ -610,6 +650,7 @@ function ProjectRow({
   project: Project;
   color: string;
   now: number;
+  rank: Map<string, number>;
   px: number;
   x: (ms: number) => number;
   rangeStart: number;
@@ -729,6 +770,11 @@ function ProjectRow({
               >
                 {phase.isCompleted && <Check className="size-2.5 text-white" strokeWidth={3} />}
               </button>
+              {rank.has(phase.id) && (
+                <span className="grid size-4 shrink-0 place-items-center rounded-full bg-accent text-[10px] font-semibold text-white" title="建議優先順序">
+                  {rank.get(phase.id)}
+                </span>
+              )}
               <span className={`truncate font-medium ${overdue ? 'text-red-500' : ''}`}>{phase.name}</span>
               {!!phase.todos?.length && (
                 <span className="shrink-0 text-[10px] text-muted tabular-nums">
@@ -922,6 +968,7 @@ function PhaseDialog({
   onClose: () => void;
 }) {
   const [kind, setKind] = useState<PhaseKind>(phase?.kind ?? 'range');
+  const [importance, setImportance] = useState<Importance>(phase?.importance ?? 2);
   const [error, setError] = useState('');
   const [todos, setTodos] = useState<Todo[]>(phase?.todos ?? []);
   const [newTodo, setNewTodo] = useState('');
@@ -949,6 +996,7 @@ function PhaseDialog({
             endAt: end === null ? undefined : iso(end),
             isCompleted: f.get('done') === 'on',
             todos: todos.filter(t => t.text.trim()),
+            importance,
           });
         }}
       >
@@ -963,6 +1011,20 @@ function PhaseDialog({
                 key={k}
                 onClick={() => setKind(k)}
                 className={`rounded-md py-1.5 text-sm ${kind === k ? 'bg-panel font-medium text-fg shadow-sm' : 'font-normal text-muted'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </Field>
+        <Field label="重要度">
+          <div className="grid grid-cols-3 gap-1 rounded-lg bg-subtle p-1">
+            {([[1, '低'], [2, '中'], [3, '高']] as const).map(([v, label]) => (
+              <button
+                type="button"
+                key={v}
+                onClick={() => setImportance(v)}
+                className={`rounded-md py-1.5 text-sm ${importance === v ? 'bg-panel font-medium text-fg shadow-sm' : 'font-normal text-muted'}`}
               >
                 {label}
               </button>

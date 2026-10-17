@@ -14,7 +14,10 @@ export interface Phase {
   endAt?: string;
   isCompleted: boolean;
   todos?: Todo[]; // 舊存檔沒有這欄
+  importance?: Importance; // 舊存檔沒有這欄，當「中」
 }
+
+export type Importance = 1 | 2 | 3; // 低、中、高
 
 export interface Project {
   id: string;
@@ -49,7 +52,8 @@ const isPhase = (ph: Phase) =>
   (ph.kind === 'event' || isDate(ph.endAt)) &&
   typeof ph.isCompleted === 'boolean' &&
   (ph.todos === undefined ||
-    (Array.isArray(ph.todos) && ph.todos.every(t => isStr(t?.id) && isStr(t.text) && typeof t.done === 'boolean')));
+    (Array.isArray(ph.todos) && ph.todos.every(t => isStr(t?.id) && isStr(t.text) && typeof t.done === 'boolean'))) &&
+  (ph.importance === undefined || [1, 2, 3].includes(ph.importance));
 
 const isProject = (p: Project) => isStr(p?.id) && isStr(p.title) && isStr(p.category) && Array.isArray(p.phases) && p.phases.every(isPhase);
 
@@ -94,6 +98,37 @@ export function dayBounds(ms: number): [number, number] {
 /** 最近一個未完成階段（依截止時間，逾期的排最前） */
 export const focusPhase = (phases: Phase[]) =>
   phases.filter(p => !p.isCompleted).sort((a, b) => endMs(a) - endMs(b))[0];
+
+const IMPORTANCE_WEIGHT = { 1: 0.6, 2: 1, 3: 1.6 };
+
+/**
+ * 建議優先順序，融合三個法則：
+ * - CR 臨界比 =（截止 − 現在）/ 剩餘工作量；剩餘工作量 = 階段長度 × 未完成待辦比例，沒待辦當全部沒做
+ * - 重要度（WSJF 的價值項）
+ * - 同專案後面還卡著幾個階段（阻塞權重）
+ * 權重除在 CR 上（越小越先做）；逾期的 CR 是負的，改乘上去，讓重要的逾期排更前面。
+ */
+export function priorities(projects: Project[], now: number) {
+  return projects
+    .flatMap(project =>
+      project.phases
+        .filter(p => !p.isCompleted)
+        .map(phase => {
+          const todos = phase.todos ?? [];
+          const left = todos.length ? todos.filter(t => !t.done).length / todos.length : 1;
+          // ponytail: 至少算 1 小時，時間點階段和待辦全勾的才不會除以 0
+          const work = Math.max(HOUR, (endMs(phase) - startMs(phase)) * left);
+          const cr = (endMs(phase) - now) / work;
+          const blocks = project.phases.filter(o => o !== phase && !o.isCompleted && startMs(o) >= endMs(phase)).length;
+          const weight = IMPORTANCE_WEIGHT[phase.importance ?? 2] * (1 + 0.2 * blocks);
+          return { project, phase, cr, score: cr < 0 ? cr * weight : cr / weight };
+        }),
+    )
+    .sort((a, b) => a.score - b.score);
+}
+
+/** CR 判讀：<0 逾期、<1 照原估工作量已經來不及、<1.5 沒什麼餘裕 */
+export const crStatus = (cr: number) => (cr < 0 ? '已逾期' : cr < 1 ? '落後' : cr < 1.5 ? '緊繃' : null);
 
 export function formatDuration(ms: number) {
   const total = Math.floor(Math.abs(ms) / 60_000);
